@@ -5,7 +5,7 @@ import time
 from flask import Flask
 from collections import defaultdict
 
-TOKEN = "8701691785:AAEbFDGSJqZTXLh7B082dtGzbDNLXmoLi8k"
+TOKEN = "8701691785:AAEbFDGSJqZTXLh7B082dtGzbDNLXmoLi8k"  # Replace with your bot token
 
 bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
 app = Flask(__name__)
@@ -13,45 +13,42 @@ app = Flask(__name__)
 # -----------------------------
 # Storage
 # -----------------------------
-
 game_data = {}          # active games per chat
 scores = defaultdict(dict)  # scores per chat
 
 ROUND_TIME = 60
 TOTAL_ROUNDS = 10
 
-
 # -----------------------------
 # Load Questions
 # -----------------------------
-
 def load_questions():
     q = []
-    with open("questions.txt", "r", encoding="utf-8") as f:
-        for line in f:
-            if "|" in line:
-                q.append(line.strip().split("|"))
+    try:
+        with open("questions.txt", "r", encoding="utf-8") as f:
+            for line in f:
+                if "|" in line:
+                    q.append(line.strip().split("|"))
+    except FileNotFoundError:
+        print("⚠️ questions.txt not found!")
+    if not q:
+        print("⚠️ No questions loaded! Add questions in questions.txt")
     return q
 
 questions = load_questions()
 
-
 # -----------------------------
 # Flask route (for Render)
 # -----------------------------
-
 @app.route('/')
 def home():
     return "Quiz Bot Running!"
 
-
 # -----------------------------
 # DM START MESSAGE
 # -----------------------------
-
 @bot.message_handler(commands=['start'])
 def start_dm(message):
-
     if message.chat.type != "private":
         return
 
@@ -83,24 +80,25 @@ This is a *text-based quiz game bot for Telegram groups.*
 
 Good luck 🍀
 """
-
     bot.send_message(message.chat.id, text)
-
 
 # -----------------------------
 # START GAME
 # -----------------------------
-
 @bot.message_handler(func=lambda m: m.text and m.text.lower() == "#start")
 def start_game(message):
-
     chat_id = message.chat.id
 
     if message.chat.type == "private":
+        bot.send_message(chat_id, "ℹ️ Please add me to a group to play.")
         return
 
     if chat_id in game_data:
         bot.send_message(chat_id, "⚠️ Game already running!")
+        return
+
+    if not questions:
+        bot.send_message(chat_id, "⚠️ No questions loaded. Add questions in questions.txt")
         return
 
     game_data[chat_id] = {
@@ -112,15 +110,12 @@ def start_game(message):
 
     bot.send_message(chat_id, "🎮 *Game Started!*\nGet ready for 10 rounds!")
 
-    next_round(chat_id)
-
+    threading.Thread(target=next_round, args=(chat_id,)).start()
 
 # -----------------------------
 # NEXT ROUND
 # -----------------------------
-
 def next_round(chat_id):
-
     if chat_id not in game_data:
         return
 
@@ -131,7 +126,6 @@ def next_round(chat_id):
         return
 
     q = random.choice(questions)
-
     while q in data["asked"]:
         q = random.choice(questions)
 
@@ -146,39 +140,30 @@ def next_round(chat_id):
 
     data["msg_id"] = msg.message_id
 
-    threading.Thread(target=round_timer, args=(chat_id,)).start()
-
+    threading.Thread(target=round_timer, args=(chat_id, msg.message_id)).start()
 
 # -----------------------------
 # ROUND TIMER
 # -----------------------------
-
-def round_timer(chat_id):
-
+def round_timer(chat_id, msg_id):
     time.sleep(ROUND_TIME)
 
     if chat_id not in game_data:
         return
 
-    data = game_data[chat_id]
-
     try:
-        bot.delete_message(chat_id, data["msg_id"])
+        bot.delete_message(chat_id, msg_id)
     except:
         pass
 
-    data["answer"] = None
-
+    game_data[chat_id]["answer"] = None
     next_round(chat_id)
-
 
 # -----------------------------
 # ANSWER CHECKER
 # -----------------------------
-
 @bot.message_handler(func=lambda m: True)
 def check_answer(message):
-
     chat_id = message.chat.id
 
     if chat_id not in game_data:
@@ -190,7 +175,6 @@ def check_answer(message):
         return
 
     if message.text.lower().strip() == data["answer"]:
-
         user_id = message.from_user.id
         name = message.from_user.first_name
 
@@ -207,17 +191,13 @@ def check_answer(message):
             pass
 
         data["answer"] = None
-
         next_round(chat_id)
-
 
 # -----------------------------
 # RANK
 # -----------------------------
-
 @bot.message_handler(func=lambda m: m.text and m.text.lower() == "#rank")
 def rank(message):
-
     chat_id = message.chat.id
 
     if chat_id not in scores or not scores[chat_id]:
@@ -237,38 +217,27 @@ def rank(message):
 
     bot.send_message(chat_id, text)
 
-
 # -----------------------------
 # END GAME
 # -----------------------------
-
 @bot.message_handler(func=lambda m: m.text and m.text.lower() == "#end")
 def end_cmd(message):
-
     chat_id = message.chat.id
     end_game(chat_id)
 
-
 def end_game(chat_id):
-
     if chat_id not in game_data:
         return
 
     bot.send_message(chat_id, "🎮 *Game Ended!*")
-
     del game_data[chat_id]
-
 
 # -----------------------------
 # RUN BOT
 # -----------------------------
-
 def run_bot():
     bot.infinity_polling()
 
-
 if __name__ == "__main__":
-
     threading.Thread(target=run_bot).start()
-
     app.run(host="0.0.0.0", port=10000)
