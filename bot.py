@@ -10,9 +10,9 @@ TOKEN = "8701691785:AAEbFDGSJqZTXLh7B082dtGzbDNLXmoLi8k"
 bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
 app = Flask(__name__)
 
-# --------------------
+# ------------------------
 # Storage
-# --------------------
+# ------------------------
 
 game_data = {}
 scores = defaultdict(dict)
@@ -21,15 +21,16 @@ ROUND_TIME = 120
 TOTAL_ROUNDS = 10
 
 
-# --------------------
+# ------------------------
 # Load Questions
-# --------------------
+# ------------------------
 
 def load_questions():
 
     q = []
 
     with open("questions.txt", "r", encoding="utf-8") as f:
+
         for line in f:
 
             if "|" in line:
@@ -44,18 +45,18 @@ def load_questions():
 questions = load_questions()
 
 
-# --------------------
+# ------------------------
 # Flask (Render)
-# --------------------
+# ------------------------
 
 @app.route('/')
 def home():
     return "Quiz Bot Running!"
 
 
-# --------------------
-# Welcome message (DM)
-# --------------------
+# ------------------------
+# DM Welcome
+# ------------------------
 
 @bot.message_handler(commands=['start'])
 def start_dm(message):
@@ -93,9 +94,9 @@ Good luck 🍀
     bot.send_message(message.chat.id, text)
 
 
-# --------------------
+# ------------------------
 # Start Game
-# --------------------
+# ------------------------
 
 @bot.message_handler(func=lambda m: m.text and m.text.lower() == "#start")
 def start_game(message):
@@ -121,9 +122,9 @@ def start_game(message):
     next_round(chat_id)
 
 
-# --------------------
+# ------------------------
 # Next Round
-# --------------------
+# ------------------------
 
 def next_round(chat_id):
 
@@ -163,9 +164,9 @@ def next_round(chat_id):
     ).start()
 
 
-# --------------------
-# Round Timer
-# --------------------
+# ------------------------
+# Timer
+# ------------------------
 
 def round_timer(chat_id):
 
@@ -189,9 +190,9 @@ def round_timer(chat_id):
     next_round(chat_id)
 
 
-# --------------------
+# ------------------------
 # Answer Checker
-# --------------------
+# ------------------------
 
 @bot.message_handler(func=lambda m: True)
 def check_answer(message):
@@ -219,7 +220,14 @@ def check_answer(message):
         user_id = message.from_user.id
         name = message.from_user.first_name
 
-        scores[chat_id][user_id] = scores[chat_id].get(user_id, 0) + 10
+        if user_id not in scores[chat_id]:
+
+            scores[chat_id][user_id] = {
+                "name": name,
+                "points": 0
+            }
+
+        scores[chat_id][user_id]["points"] += 10
 
         bot.send_message(
             chat_id,
@@ -236,9 +244,9 @@ def check_answer(message):
         next_round(chat_id)
 
 
-# --------------------
+# ------------------------
 # Leaderboard
-# --------------------
+# ------------------------
 
 @bot.message_handler(func=lambda m: m.text and m.text.lower() == "#rank")
 def rank(message):
@@ -251,23 +259,23 @@ def rank(message):
         return
 
     sorted_users = sorted(
-        scores[chat_id].items(),
-        key=lambda x: x[1],
+        scores[chat_id].values(),
+        key=lambda x: x["points"],
         reverse=True
     )
 
     text = "🏆 Leaderboard\n\n"
 
-    for i, (uid, pts) in enumerate(sorted_users[:10], 1):
+    for i, user in enumerate(sorted_users[:10], 1):
 
-        text += f"{i}. {pts} points\n"
+        text += f"{i}. {user['name']} — {user['points']} points\n"
 
     bot.send_message(chat_id, text)
 
 
-# --------------------
+# ------------------------
 # End Command
-# --------------------
+# ------------------------
 
 @bot.message_handler(func=lambda m: m.text and m.text.lower() == "#end")
 def end_cmd(message):
@@ -277,9 +285,9 @@ def end_cmd(message):
     end_game(chat_id)
 
 
-# --------------------
+# ------------------------
 # End Game
-# --------------------
+# ------------------------
 
 def end_game(chat_id):
 
@@ -288,26 +296,26 @@ def end_game(chat_id):
 
     text = "🎮 Game Ended!\n\n🏆 Final Scores\n\n"
 
-    if chat_id in scores:
+    if chat_id in scores and scores[chat_id]:
 
         sorted_users = sorted(
-            scores[chat_id].items(),
-            key=lambda x: x[1],
+            scores[chat_id].values(),
+            key=lambda x: x["points"],
             reverse=True
         )
 
-        for i, (uid, pts) in enumerate(sorted_users[:10], 1):
+        for i, user in enumerate(sorted_users[:10], 1):
 
-            text += f"{i}. {pts} points\n"
+            text += f"{i}. {user['name']} — {user['points']} points\n"
 
     bot.send_message(chat_id, text)
 
     del game_data[chat_id]
 
 
-# --------------------
+# ------------------------
 # Run Bot
-# --------------------
+# ------------------------
 
 def run_bot():
     bot.infinity_polling(skip_pending=True)
