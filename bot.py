@@ -125,8 +125,9 @@ def next_round(chat_id):
         end_game(chat_id)
         return
 
+    # Pick a valid question
     q = random.choice(questions)
-    while q in data["asked"]:
+    while q in data["asked"] or len(q) < 2 or not q[0].strip() or not q[1].strip():
         q = random.choice(questions)
 
     data["asked"].append(q)
@@ -135,7 +136,7 @@ def next_round(chat_id):
 
     msg = bot.send_message(
         chat_id,
-        f"🧠 *Round {data['round']}/{TOTAL_ROUNDS}*\n\n{q[0]}\n\n⏳ 60 seconds!"
+        f"🧠 *Round {data['round']}/{TOTAL_ROUNDS}*\n\n{q[0].strip()}\n\n⏳ {ROUND_TIME} seconds!"
     )
 
     data["msg_id"] = msg.message_id
@@ -151,13 +152,17 @@ def round_timer(chat_id, msg_id):
     if chat_id not in game_data:
         return
 
+    # Delete previous question
     try:
         bot.delete_message(chat_id, msg_id)
     except:
         pass
 
+    # Reset current answer
     game_data[chat_id]["answer"] = None
-    next_round(chat_id)
+
+    # Send next round
+    threading.Thread(target=next_round, args=(chat_id,)).start()
 
 # -----------------------------
 # ANSWER CHECKER
@@ -178,20 +183,28 @@ def check_answer(message):
         user_id = message.from_user.id
         name = message.from_user.first_name
 
-        scores[chat_id][user_id] = scores[chat_id].get(user_id, 0) + 10
+        # Store points + name
+        if user_id not in scores[chat_id]:
+            scores[chat_id][user_id] = {"points": 0, "name": name}
+
+        scores[chat_id][user_id]["points"] += 10
 
         bot.send_message(
             chat_id,
             f"✅ *{name} got the correct answer!*\n+10 points 🎉"
         )
 
+        # Delete current question
         try:
             bot.delete_message(chat_id, data["msg_id"])
         except:
             pass
 
+        # Reset answer
         data["answer"] = None
-        next_round(chat_id)
+
+        # Next round
+        threading.Thread(target=next_round, args=(chat_id,)).start()
 
 # -----------------------------
 # RANK
@@ -204,16 +217,16 @@ def rank(message):
         bot.send_message(chat_id, "No scores yet.")
         return
 
+    # Sort by points
     sorted_users = sorted(
         scores[chat_id].items(),
-        key=lambda x: x[1],
+        key=lambda x: x[1]["points"],
         reverse=True
     )
 
     text = "🏆 *Leaderboard*\n\n"
-
-    for i, (uid, pts) in enumerate(sorted_users[:10], 1):
-        text += f"{i}. {pts} points\n"
+    for i, (uid, info) in enumerate(sorted_users[:10], 1):
+        text += f"{i}. {info['name']} - {info['points']} points\n"
 
     bot.send_message(chat_id, text)
 
