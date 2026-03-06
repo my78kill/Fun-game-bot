@@ -10,6 +10,10 @@ TOKEN = "8701691785:AAEbFDGSJqZTXLh7B082dtGzbDNLXmoLi8k"
 bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
 app = Flask(__name__)
 
+# --------------------
+# Storage
+# --------------------
+
 game_data = {}
 scores = defaultdict(dict)
 
@@ -17,32 +21,42 @@ ROUND_TIME = 120
 TOTAL_ROUNDS = 10
 
 
-# -------------------------
+# --------------------
 # Load Questions
-# -------------------------
+# --------------------
+
 def load_questions():
+
     q = []
+
     with open("questions.txt", "r", encoding="utf-8") as f:
         for line in f:
+
             if "|" in line:
-                q.append(line.strip().split("|"))
+
+                question, answer = line.split("|")
+
+                q.append((question.strip(), answer.strip().lower()))
+
     return q
 
 
 questions = load_questions()
 
 
-# -------------------------
-# Flask route (Render)
-# -------------------------
+# --------------------
+# Flask (Render)
+# --------------------
+
 @app.route('/')
 def home():
-    return "Quiz Bot Running"
+    return "Quiz Bot Running!"
 
 
-# -------------------------
-# Welcome Message
-# -------------------------
+# --------------------
+# Welcome message (DM)
+# --------------------
+
 @bot.message_handler(commands=['start'])
 def start_dm(message):
 
@@ -50,28 +64,28 @@ def start_dm(message):
         return
 
     text = """
-👋 *Welcome to Brain Battle Bot 🧠🎮*
+👋 *Welcome to Brain Battle Bot* 🧠
 
-This is a *text-based quiz game bot for Telegram groups.*
+This is a *Telegram Group Quiz Game Bot.*
 
-🤖 *How to Play*
+🎮 **How To Play**
 
-1️⃣ Add the bot to your group  
-2️⃣ Give the bot *Delete Messages permission*  
-3️⃣ Type **#start** in the group  
+1️⃣ Add bot to group  
+2️⃣ Give *Delete Messages permission*  
+3️⃣ Type **#start**
 
-🎮 *Game Rules*
+⚡ **Game Rules**
 
 • 10 rounds per game  
 • 1 question per round  
 • 120 seconds to answer  
-• First correct answer gets points  
+• First correct answer wins points  
 
-🏆 *Commands*
+🏆 **Commands**
 
-#start – Start game  
-#rank – Leaderboard  
-#end – End game  
+#start – start game  
+#rank – show leaderboard  
+#end – stop game  
 
 Good luck 🍀
 """
@@ -79,11 +93,15 @@ Good luck 🍀
     bot.send_message(message.chat.id, text)
 
 
-# -------------------------
+# --------------------
 # Start Game
-# -------------------------
+# --------------------
+
 @bot.message_handler(func=lambda m: m.text and m.text.lower() == "#start")
 def start_game(message):
+
+    if message.chat.type == "private":
+        return
 
     chat_id = message.chat.id
 
@@ -95,18 +113,18 @@ def start_game(message):
         "round": 0,
         "asked": [],
         "answer": None,
-        "msg_id": None,
-        "round_active": False
+        "msg_id": None
     }
 
-    bot.send_message(chat_id, "🎮 *Game Started!*")
+    bot.send_message(chat_id, "🎮 Game Started!\n10 Rounds Begin!")
 
     next_round(chat_id)
 
 
-# -------------------------
+# --------------------
 # Next Round
-# -------------------------
+# --------------------
+
 def next_round(chat_id):
 
     if chat_id not in game_data:
@@ -125,24 +143,31 @@ def next_round(chat_id):
 
     data["asked"].append(q)
 
+    question, answer = q
+
+    data["answer"] = answer
+
     data["round"] += 1
-    data["answer"] = q[1].lower()
-    data["round_active"] = True
 
     msg = bot.send_message(
         chat_id,
-        f"🧠 Round {data['round']}/{TOTAL_ROUNDS}\n\n{q[0]}\n\n⏳ {ROUND_TIME} seconds!"
+        f"🧠 Round {data['round']}/{TOTAL_ROUNDS}\n\n{question}\n\n⏳ 120 seconds!"
     )
 
     data["msg_id"] = msg.message_id
 
-    threading.Thread(target=round_timer, args=(chat_id, msg.message_id)).start()
+    threading.Thread(
+        target=round_timer,
+        args=(chat_id,),
+        daemon=True
+    ).start()
 
 
-# -------------------------
+# --------------------
 # Round Timer
-# -------------------------
-def round_timer(chat_id, msg_id):
+# --------------------
+
+def round_timer(chat_id):
 
     time.sleep(ROUND_TIME)
 
@@ -151,13 +176,11 @@ def round_timer(chat_id, msg_id):
 
     data = game_data[chat_id]
 
-    if not data["round_active"]:
+    if data["answer"] is None:
         return
 
-    data["round_active"] = False
-
     try:
-        bot.delete_message(chat_id, msg_id)
+        bot.delete_message(chat_id, data["msg_id"])
     except:
         pass
 
@@ -166,11 +189,18 @@ def round_timer(chat_id, msg_id):
     next_round(chat_id)
 
 
-# -------------------------
+# --------------------
 # Answer Checker
-# -------------------------
+# --------------------
+
 @bot.message_handler(func=lambda m: True)
 def check_answer(message):
+
+    if not message.text:
+        return
+
+    if message.text.startswith("#"):
+        return
 
     chat_id = message.chat.id
 
@@ -179,24 +209,21 @@ def check_answer(message):
 
     data = game_data[chat_id]
 
-    if not data["round_active"]:
+    if data["answer"] is None:
         return
 
-    if message.text.lower().strip() == data["answer"]:
+    user_answer = message.text.lower().strip()
 
-        data["round_active"] = False
+    if user_answer == data["answer"]:
 
         user_id = message.from_user.id
         name = message.from_user.first_name
 
-        if user_id not in scores[chat_id]:
-            scores[chat_id][user_id] = {"name": name, "points": 0}
-
-        scores[chat_id][user_id]["points"] += 10
+        scores[chat_id][user_id] = scores[chat_id].get(user_id, 0) + 10
 
         bot.send_message(
             chat_id,
-            f"✅ {name} got correct answer!\n+10 points 🎉"
+            f"✅ {name} answered correctly!\n+10 points 🎉"
         )
 
         try:
@@ -209,35 +236,39 @@ def check_answer(message):
         next_round(chat_id)
 
 
-# -------------------------
-# Rank
-# -------------------------
+# --------------------
+# Leaderboard
+# --------------------
+
 @bot.message_handler(func=lambda m: m.text and m.text.lower() == "#rank")
 def rank(message):
 
     chat_id = message.chat.id
 
     if chat_id not in scores or not scores[chat_id]:
+
         bot.send_message(chat_id, "No scores yet.")
         return
 
     sorted_users = sorted(
         scores[chat_id].items(),
-        key=lambda x: x[1]["points"],
+        key=lambda x: x[1],
         reverse=True
     )
 
-    text = "🏆 *Leaderboard*\n\n"
+    text = "🏆 Leaderboard\n\n"
 
-    for i, (uid, info) in enumerate(sorted_users[:10], 1):
-        text += f"{i}. {info['name']} - {info['points']} pts\n"
+    for i, (uid, pts) in enumerate(sorted_users[:10], 1):
+
+        text += f"{i}. {pts} points\n"
 
     bot.send_message(chat_id, text)
 
 
-# -------------------------
-# End Game
-# -------------------------
+# --------------------
+# End Command
+# --------------------
+
 @bot.message_handler(func=lambda m: m.text and m.text.lower() == "#end")
 def end_cmd(message):
 
@@ -246,36 +277,40 @@ def end_cmd(message):
     end_game(chat_id)
 
 
+# --------------------
+# End Game
+# --------------------
+
 def end_game(chat_id):
 
     if chat_id not in game_data:
         return
 
-    bot.send_message(chat_id, "🎮 Game Ended!")
+    text = "🎮 Game Ended!\n\n🏆 Final Scores\n\n"
 
     if chat_id in scores:
 
         sorted_users = sorted(
             scores[chat_id].items(),
-            key=lambda x: x[1]["points"],
+            key=lambda x: x[1],
             reverse=True
         )
 
-        text = "🏆 *Final Leaderboard*\n\n"
+        for i, (uid, pts) in enumerate(sorted_users[:10], 1):
 
-        for i, (uid, info) in enumerate(sorted_users[:10], 1):
-            text += f"{i}. {info['name']} - {info['points']} pts\n"
+            text += f"{i}. {pts} points\n"
 
-        bot.send_message(chat_id, text)
+    bot.send_message(chat_id, text)
 
     del game_data[chat_id]
 
 
-# -------------------------
+# --------------------
 # Run Bot
-# -------------------------
+# --------------------
+
 def run_bot():
-    bot.infinity_polling()
+    bot.infinity_polling(skip_pending=True)
 
 
 if __name__ == "__main__":
