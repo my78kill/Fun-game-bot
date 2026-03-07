@@ -5,7 +5,7 @@ import time
 from flask import Flask
 from collections import defaultdict
 
-TOKEN = "8701691785:AAEbFDGSJqZTXLh7B082dtGzbDNLXmoLi8k"
+TOKEN = "8745280430:AAFxOU5b5RiBf1ugFgPTdqtFc-b6DGTT9VM"
 
 bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
 app = Flask(__name__)
